@@ -1,0 +1,86 @@
+local test = require("santoku.test")
+local err = require("santoku.error")
+local thread = require("santoku.imap.thread")
+
+local function msg (uid, msgid, refs, thrid)
+  return { uid = uid, msgid = msgid, refs = refs, thrid = thrid }
+end
+
+test("references threading", function ()
+  local a = msg(1, "a")
+  local b = msg(2, "b", { "a" })
+  local c = msg(3, "c", { "a", "b" })
+  local roots = thread.forest({ c, a, b })
+  err.assert(#roots == 1)
+  err.assert(roots[1].msg == a)
+  err.assert(#roots[1].children == 1)
+  err.assert(roots[1].children[1].msg == b)
+  err.assert(roots[1].children[1].children[1].msg == c)
+end)
+
+test("last resolvable reference wins", function ()
+  local a = msg(1, "a")
+  local b = msg(2, "b", { "missing", "a" })
+  local roots = thread.forest({ a, b })
+  err.assert(#roots == 1)
+  err.assert(roots[1].children[1].msg == b)
+end)
+
+test("orphan references make roots", function ()
+  local a = msg(1, "a", { "gone" })
+  local roots = thread.forest({ a })
+  err.assert(#roots == 1 and roots[1].msg == a)
+end)
+
+test("thrid groups parentless messages", function ()
+  local a = msg(5, "a", nil, "t1")
+  local b = msg(9, "b", nil, "t1")
+  local c = msg(7, "c", nil, "t2")
+  local roots = thread.forest({ b, a, c })
+  err.assert(#roots == 2)
+  err.assert(roots[1].msg == a)
+  err.assert(roots[1].children[1].msg == b)
+  err.assert(roots[2].msg == c)
+end)
+
+test("thrid root reassigned to earliest uid", function ()
+  local late = msg(9, "x", nil, "t1")
+  local early = msg(2, "y", nil, "t1")
+  local roots = thread.forest({ late, early })
+  err.assert(#roots == 1)
+  err.assert(roots[1].msg == early)
+  err.assert(roots[1].children[1].msg == late)
+end)
+
+test("cycle broken", function ()
+  local a = msg(1, "a", { "b" })
+  local b = msg(2, "b", { "a" })
+  local roots = thread.forest({ a, b })
+  err.assert(#roots >= 1)
+  local n = 0
+  local function count (list)
+    for i = 1, #list do
+      n = n + 1
+      count(list[i].children)
+    end
+  end
+  count(roots)
+  err.assert(n == 2)
+end)
+
+test("children sorted by uid", function ()
+  local a = msg(1, "a")
+  local b = msg(9, "b", { "a" })
+  local c = msg(3, "c", { "a" })
+  local roots = thread.forest({ a, b, c })
+  err.assert(roots[1].children[1].msg == c)
+  err.assert(roots[1].children[2].msg == b)
+end)
+
+test("no msgid still placed", function ()
+  local a = msg(1, nil, nil, "t1")
+  local b = msg(2, nil, nil, "t1")
+  local roots = thread.forest({ a, b })
+  err.assert(#roots == 1)
+  err.assert(#roots[1].children == 1)
+end)
