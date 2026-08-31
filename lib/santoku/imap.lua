@@ -252,8 +252,8 @@ return function (driver)
       issue("LOGIN " .. quote(user) .. " " .. quote(pass), nil, cb)
     end
 
-    client.examine = function (mailbox, cb)
-      issue("EXAMINE " .. quote(mailbox), nil, function (ok, res)
+    local function open_box (cmd, mailbox, cb)
+      issue(cmd .. " " .. quote(mailbox), nil, function (ok, res)
         if not ok then return cb(false, res) end
         local out = { exists = 0 }
         for i = 1, #res.untagged do
@@ -267,6 +267,22 @@ return function (driver)
         end
         cb(true, out)
       end)
+    end
+
+    client.examine = function (mailbox, cb)
+      open_box("EXAMINE", mailbox, cb)
+    end
+
+    client.select = function (mailbox, cb)
+      open_box("SELECT", mailbox, cb)
+    end
+
+    client.store = function (set, flags, cb)
+      issue("UID STORE " .. set .. " " .. flags, nil, cb)
+    end
+
+    client.expunge = function (cb)
+      issue("EXPUNGE", nil, cb)
     end
 
     client.search = function (criteria, cb)

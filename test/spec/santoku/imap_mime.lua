@@ -21,6 +21,17 @@ test("build reply", function ()
   err.assert(str.find(m, "Content-Type: text/plain; charset=utf-8\r\n", 1, true))
 end)
 
+test("message id header", function ()
+  local m = mime.build({
+    message_id = "abc123.1@mail.example.com",
+    paragraphs = { "x" },
+  })
+  err.assert(str.find(m,
+    "Message-ID: <abc123.1@mail.example.com>\r\n", 1, true))
+  local m2 = mime.build({ paragraphs = { "x" } })
+  err.assert(not str.find(m2, "Message-ID", 1, true))
+end)
+
 test("non ascii subject encodes", function ()
   local m = mime.build({ subject = "héj", paragraphs = { "x" } })
   err.assert(str.find(m, "Subject: =?UTF-8?B?", 1, true))

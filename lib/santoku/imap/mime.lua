@@ -19,6 +19,7 @@ local function build (t)
   h("To", t.to)
   h("Subject", t.subject and encode_word(t.subject))
   h("Date", t.date)
+  h("Message-ID", t.message_id and ("<" .. t.message_id .. ">"))
   h("In-Reply-To", t.in_reply_to and ("<" .. t.in_reply_to .. ">"))
   if t.references and #t.references > 0 then
     local refs = {}

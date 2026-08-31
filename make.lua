@@ -1,7 +1,7 @@
 local env = {
 
   name = "santoku-imap",
-  version = "0.0.1-1",
+  version = "0.1.0-1",
   license = "MIT",
   public = true,
 

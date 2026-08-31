@@ -142,6 +142,33 @@ for name, chunker in pairs({ whole = false, bytewise = bytewise }) do
     err.assert(string.find(got.res.text, "APPENDUID", 1, true))
   end)
 
+  test("select store expunge: " .. name, function ()
+    local got = session({
+      GREETING,
+      { expect = "T1 SELECT \"[Gmail]/Drafts\"\r\n",
+        reply = "* 4 EXISTS\r\n* OK [UIDVALIDITY 6] v\r\n"
+          .. "* OK [UIDNEXT 100] n\r\nT1 OK done\r\n" },
+      { expect = "T2 UID STORE 77 +FLAGS.SILENT (\\Deleted)\r\n",
+        reply = "T2 OK done\r\n" },
+      { expect = "T3 EXPUNGE\r\n",
+        reply = "* 2 EXPUNGE\r\nT3 OK done\r\n" },
+    }, ck, function (c, got)
+      c.select("[Gmail]/Drafts", function (ok, info)
+        err.assert(ok, "select failed")
+        got.info = info
+        c.store("77", "+FLAGS.SILENT (\\Deleted)", function (ok2)
+          err.assert(ok2, "store failed")
+          c.expunge(function (ok3)
+            got.done = ok3
+          end)
+        end)
+      end)
+    end)
+    err.assert(got.info.exists == 4)
+    err.assert(got.info.uidvalidity == "6")
+    err.assert(got.done, "expunge failed")
+  end)
+
   test("list finds drafts: " .. name, function ()
     local got = session({
       GREETING,
