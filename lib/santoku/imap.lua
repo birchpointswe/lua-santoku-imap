@@ -70,6 +70,7 @@ local function extract_fetch (pieces)
       out.msgid = toks[i + 1] and toks[i + 1].s
       i = i + 2
     elseif not t.q and (t.s == "BODY" or t.s == "RFC822.HEADER") then
+      local is_text = false
       i = i + 1
       if toks[i] and not toks[i].q and toks[i].s == "[" then
         local depth = 1
@@ -77,11 +78,22 @@ local function extract_fetch (pieces)
         while i <= n and depth > 0 do
           if not toks[i].q and toks[i].s == "[" then depth = depth + 1 end
           if not toks[i].q and toks[i].s == "]" then depth = depth - 1 end
+          if not toks[i].q and toks[i].s == "TEXT" and depth == 1 then
+            is_text = true
+          end
           i = i + 1
         end
       end
+      if toks[i] and not toks[i].q
+        and str.match(toks[i].s, "^<%d+>$") then
+        i = i + 1
+      end
       if toks[i] and toks[i].q then
-        out.header = toks[i].s
+        if is_text then
+          out.body = toks[i].s
+        else
+          out.header = toks[i].s
+        end
       end
       i = i + 1
     else

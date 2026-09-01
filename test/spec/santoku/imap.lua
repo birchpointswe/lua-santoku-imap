@@ -125,6 +125,30 @@ for name, chunker in pairs({ whole = false, bytewise = bytewise }) do
     err.assert(got.msgs[2].header == "Subject: Re")
   end)
 
+  test("fetch header and partial body: " .. name, function ()
+    local hdr = "Subject: Hi\r\n\r\n"
+    local body = "the actual text\r\n"
+    local got = session({
+      GREETING,
+      { expect = "T1 UID FETCH 5 (UID BODY.PEEK[HEADER.FIELDS (SUBJECT)]"
+          .. " BODY.PEEK[TEXT]<0.65536>)\r\n",
+        reply = "* 1 FETCH (UID 5"
+          .. " BODY[HEADER.FIELDS (SUBJECT)] {" .. #hdr .. "}\r\n" .. hdr
+          .. " BODY[TEXT]<0> {" .. #body .. "}\r\n" .. body .. ")\r\n"
+          .. "T1 OK done\r\n" },
+    }, ck, function (c, got)
+      c.fetch("5",
+        "UID BODY.PEEK[HEADER.FIELDS (SUBJECT)] BODY.PEEK[TEXT]<0.65536>",
+        function (ok, msgs)
+          err.assert(ok, "fetch failed")
+          got.msgs = msgs
+        end)
+    end)
+    err.assert(got.msgs[1].uid == 5)
+    err.assert(got.msgs[1].header == hdr)
+    err.assert(got.msgs[1].body == body)
+  end)
+
   test("append with continuation: " .. name, function ()
     local msg = "Subject: draft\r\n\r\nbody\r\n"
     local got = session({
