@@ -75,7 +75,7 @@ local function strip_html (s)
   s = str.gsub(s, "&#(%d+);", function (n)
     n = tonumber(n)
     if n and n >= 32 and n < 127 then
-      return string.char(n)
+      return str.char(n)
     end
     return ""
   end)

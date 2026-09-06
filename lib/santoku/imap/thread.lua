@@ -62,7 +62,7 @@ local function forest (msgs)
     end
   end
   local function sortrec (list)
-    table.sort(list, function (a, b)
+    arr.sort(list, function (a, b)
       return (a.msg.uid or 0) < (b.msg.uid or 0)
     end)
     for i = 1, #list do

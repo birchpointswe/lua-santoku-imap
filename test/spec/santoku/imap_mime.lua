@@ -2,6 +2,7 @@ local test = require("santoku.test")
 local err = require("santoku.error")
 local str = require("santoku.string")
 local mime = require("santoku.imap.mime")
+local arr = require("santoku.array")
 
 test("build reply", function ()
   local m = mime.build({
@@ -126,7 +127,7 @@ test("paragraphs split and collapse", function ()
 end)
 
 test("paragraphs cap length and count", function ()
-  local long = string.rep("a", 3000)
+  local long = str.rep("a", 3000)
   local p = mime.paragraphs(long, { max_len = 100 })
   err.assert(#p == 2)
   err.assert(#p[1] == 100)
@@ -135,7 +136,7 @@ test("paragraphs cap length and count", function ()
   for i = 1, 10 do
     many[i] = "p" .. i
   end
-  local p2 = mime.paragraphs(table.concat(many, "\n\n"), { max_count = 3 })
+  local p2 = mime.paragraphs(arr.concat(many, "\n\n"), { max_count = 3 })
   err.assert(#p2 == 4)
   err.assert(p2[4] == "[truncated]")
 end)

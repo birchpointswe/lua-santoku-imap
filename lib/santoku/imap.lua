@@ -151,14 +151,14 @@ return function (driver)
       active = nil
       if a then a.done(false, { status = "BAD", text = e }) end
       while #queue > 0 do
-        local c = table.remove(queue, 1)
+        local _, c = arr.shift(queue)
         c.done(false, { status = "BAD", text = e })
       end
     end
 
     local function send_next ()
       if active or #queue == 0 or closed then return end
-      active = table.remove(queue, 1)
+      active = select(2, arr.shift(queue))
       conn.write(active.tag .. " " .. active.line .. "\r\n")
     end
 

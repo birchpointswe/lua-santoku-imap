@@ -1,6 +1,8 @@
 local test = require("santoku.test")
 local err = require("santoku.error")
 local imap = require("santoku.imap")
+local str = require("santoku.string")
+local arr = require("santoku.array")
 
 local function fake (script, chunker)
   return {
@@ -26,8 +28,8 @@ local function fake (script, chunker)
           pending = pending .. d
           while script[step] and script[step].expect
             and #pending >= #script[step].expect
-            and string.sub(pending, 1, #script[step].expect) == script[step].expect do
-            pending = string.sub(pending, #script[step].expect + 1)
+            and str.sub(pending, 1, #script[step].expect) == script[step].expect do
+            pending = str.sub(pending, #script[step].expect + 1)
             local reply = script[step].reply
             step = step + 1
             if reply then deliver(reply) end
@@ -48,7 +50,7 @@ end
 local function bytewise (s)
   local out = {}
   for i = 1, #s do
-    out[i] = string.sub(s, i, i)
+    out[i] = str.sub(s, i, i)
   end
   return out
 end
@@ -163,7 +165,7 @@ for name, chunker in pairs({ whole = false, bytewise = bytewise }) do
       end)
     end)
     err.assert(got.ok, "append failed")
-    err.assert(string.find(got.res.text, "APPENDUID", 1, true))
+    err.assert(str.find(got.res.text, "APPENDUID", 1, true))
   end)
 
   test("select store expunge: " .. name, function ()
@@ -276,8 +278,8 @@ local function fake_pull (script)
           pending = pending .. d
           while script[step] and script[step].expect
             and #pending >= #script[step].expect
-            and string.sub(pending, 1, #script[step].expect) == script[step].expect do
-            pending = string.sub(pending, #script[step].expect + 1)
+            and str.sub(pending, 1, #script[step].expect) == script[step].expect do
+            pending = str.sub(pending, #script[step].expect + 1)
             local reply = script[step].reply
             step = step + 1
             if reply then inbox[#inbox + 1] = reply end
@@ -288,7 +290,7 @@ local function fake_pull (script)
           if #inbox == 0 then
             return true, "timeout"
           end
-          opts.data(table.remove(inbox, 1))
+          opts.data(select(2, arr.shift(inbox)))
           return true
         end,
         close = function ()
@@ -352,7 +354,7 @@ test("greeting bye fails connect", function ()
     got.res = res
   end)
   err.assert(got.ok == false)
-  err.assert(string.find(got.res, "overloaded", 1, true))
+  err.assert(str.find(got.res, "overloaded", 1, true))
 end)
 
 test("close fails pending", function ()
