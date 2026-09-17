@@ -1,13 +1,13 @@
 local env = {
 
   name = "santoku-imap",
-  version = "0.2.2-1",
+  version = "0.2.3-1",
   license = "MIT",
   public = true,
 
   dependencies = {
     "lua == 5.1",
-    "santoku >= 2.0.0, < 3.0.0",
+    "santoku >= 2.1.0, < 3.0.0",
   },
 
 }

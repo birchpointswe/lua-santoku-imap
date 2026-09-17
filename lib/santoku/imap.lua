@@ -1,5 +1,6 @@
 local str = require("santoku.string")
 local arr = require("santoku.array")
+local profile = require("santoku.profile")
 
 local function quote (s)
   local escaped = str.gsub(s, "\\", "\\\\")
@@ -103,6 +104,9 @@ local function extract_fetch (pieces)
   return out
 end
 
+tokenize = profile.wrapped("imap.tokenize", tokenize)
+extract_fetch = profile.wrapped("imap.extract_fetch", extract_fetch)
+
 local function extract_list (pieces)
   local toks = tokenize(pieces)
   local attrs = {}
@@ -132,6 +136,9 @@ return function (driver)
     local closed = false
     local greeted = false
     local buf = ""
+    local pos = 1
+    local parts = {}
+    local plen = 0
     local need = 0
     local pieces = {}
     local queue = {}
@@ -166,7 +173,7 @@ return function (driver)
       if not (conn and conn.step) then return end
       local waited = 0
       while not fn() and not closed do
-        local okstep, e = conn.step(step_ms)
+        local okstep, e = profile.timed("imap.step", conn.step, step_ms)
         if not okstep then return end
         if e == "timeout" then
           waited = waited + step_ms
@@ -233,19 +240,40 @@ return function (driver)
       end
     end
 
-    local function feed (chunk)
-      buf = buf .. chunk
+    local function avail ()
+      return #buf - pos + 1 + plen
+    end
+
+    local function merge ()
+      if #parts == 0 then
+        return
+      end
+      local out = { pos > 1 and str.sub(buf, pos) or buf }
+      for i = 1, #parts do
+        out[i + 1] = parts[i]
+      end
+      buf = arr.concat(out)
+      pos = 1
+      parts = {}
+      plen = 0
+    end
+
+    local feed = profile.wrapped("imap.feed", function (chunk)
+      arr.push(parts, chunk)
+      plen = plen + #chunk
       while true do
         if need > 0 then
-          if #buf < need then return end
-          arr.push(pieces, { s = str.sub(buf, 1, need), lit = true })
-          buf = str.sub(buf, need + 1)
+          if avail() < need then return end
+          merge()
+          arr.push(pieces, { s = str.sub(buf, pos, pos + need - 1), lit = true })
+          pos = pos + need
           need = 0
         else
-          local e = str.find(buf, "\r\n", 1, true)
+          merge()
+          local e = str.find(buf, "\r\n", pos, true)
           if not e then return end
-          local line = str.sub(buf, 1, e - 1)
-          buf = str.sub(buf, e + 2)
+          local line = str.sub(buf, pos, e - 1)
+          pos = e + 2
           local litn = str.match(line, "{(%d+)}$")
           if litn then
             arr.push(pieces, { s = str.sub(line, 1, #line - #litn - 2) })
@@ -258,7 +286,7 @@ return function (driver)
           end
         end
       end
-    end
+    end)
 
     client.login = function (user, pass, cb)
       issue("LOGIN " .. quote(user) .. " " .. quote(pass), nil, cb)
