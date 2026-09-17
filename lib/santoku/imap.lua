@@ -1,6 +1,7 @@
 local str = require("santoku.string")
 local arr = require("santoku.array")
 local profile = require("santoku.profile")
+local bodystructure = require("santoku.imap.bodystructure")
 
 local function quote (s)
   local escaped = str.gsub(s, "\\", "\\\\")
@@ -70,8 +71,15 @@ local function extract_fetch (pieces)
     elseif not t.q and t.s == "X-GM-MSGID" then
       out.msgid = toks[i + 1] and toks[i + 1].s
       i = i + 2
+    elseif not t.q and t.s == "BODYSTRUCTURE" then
+      i = i + 1
+      if toks[i] and not toks[i].q and toks[i].s == "(" then
+        out.structure, i = bodystructure.parse(toks, i)
+      else
+        i = i + 1
+      end
     elseif not t.q and (t.s == "BODY" or t.s == "RFC822.HEADER") then
-      local is_text = false
+      local is_header = t.s == "RFC822.HEADER"
       i = i + 1
       if toks[i] and not toks[i].q and toks[i].s == "[" then
         local depth = 1
@@ -79,8 +87,9 @@ local function extract_fetch (pieces)
         while i <= n and depth > 0 do
           if not toks[i].q and toks[i].s == "[" then depth = depth + 1 end
           if not toks[i].q and toks[i].s == "]" then depth = depth - 1 end
-          if not toks[i].q and toks[i].s == "TEXT" and depth == 1 then
-            is_text = true
+          if not toks[i].q and depth == 1
+            and str.match(toks[i].s, "^HEADER") then
+            is_header = true
           end
           i = i + 1
         end
@@ -90,10 +99,10 @@ local function extract_fetch (pieces)
         i = i + 1
       end
       if toks[i] and toks[i].q then
-        if is_text then
-          out.body = toks[i].s
-        else
+        if is_header then
           out.header = toks[i].s
+        else
+          out.body = toks[i].s
         end
       end
       i = i + 1
@@ -265,7 +274,8 @@ return function (driver)
         if need > 0 then
           if avail() < need then return end
           merge()
-          arr.push(pieces, { s = str.sub(buf, pos, pos + need - 1), lit = true })
+          local lit = str.sub(buf, pos, pos + need - 1)
+          arr.push(pieces, { s = lit, lit = true })
           pos = pos + need
           need = 0
         else

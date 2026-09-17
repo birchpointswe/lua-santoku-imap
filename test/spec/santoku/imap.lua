@@ -1,6 +1,7 @@
 local test = require("santoku.test")
 local err = require("santoku.error")
 local imap = require("santoku.imap")
+local bs = require("santoku.imap.bodystructure")
 local str = require("santoku.string")
 local arr = require("santoku.array")
 
@@ -149,6 +150,70 @@ for name, chunker in pairs({ whole = false, bytewise = bytewise }) do
     err.assert(got.msgs[1].uid == 5)
     err.assert(got.msgs[1].header == hdr)
     err.assert(got.msgs[1].body == body)
+  end)
+
+  test("bodystructure parses and locates the text part: " .. name, function ()
+    local one = "(\"TEXT\" \"PLAIN\" (\"CHARSET\" \"US-ASCII\")"
+      .. " NIL NIL \"7BIT\" 100 5)"
+    local alt = "((\"TEXT\" \"PLAIN\" (\"CHARSET\" \"UTF-8\")"
+      .. " NIL NIL \"QUOTED-PRINTABLE\" 12 3)(\"TEXT\" \"HTML\""
+      .. " (\"CHARSET\" \"UTF-8\") NIL NIL \"BASE64\" 34 5)"
+      .. " \"ALTERNATIVE\" (\"BOUNDARY\" \"xx\") NIL NIL)"
+    local mixed = "(((\"TEXT\" \"PLAIN\" (\"CHARSET\" \"UTF-8\")"
+      .. " NIL NIL \"7BIT\" 10 1)(\"TEXT\" \"HTML\" (\"CHARSET\" \"UTF-8\")"
+      .. " NIL NIL \"7BIT\" 20 2) \"ALTERNATIVE\" (\"BOUNDARY\" \"a\")"
+      .. " NIL NIL)(\"APPLICATION\" \"PDF\" (\"NAME\" \"x.pdf\")"
+      .. " NIL NIL \"BASE64\" 99999 NIL) \"MIXED\" (\"BOUNDARY\" \"b\")"
+      .. " NIL NIL)"
+    local html = "(\"TEXT\" \"HTML\" (\"CHARSET\" \"UTF-8\")"
+      .. " NIL NIL \"BASE64\" 40 6)"
+    local got = session({
+      GREETING,
+      { expect = "T1 UID FETCH 1,2,3,4 (UID BODYSTRUCTURE)\r\n",
+        reply = "* 1 FETCH (UID 1 BODYSTRUCTURE " .. one .. ")\r\n"
+          .. "* 2 FETCH (UID 2 BODYSTRUCTURE " .. alt .. ")\r\n"
+          .. "* 3 FETCH (UID 3 BODYSTRUCTURE " .. mixed .. ")\r\n"
+          .. "* 4 FETCH (UID 4 BODYSTRUCTURE " .. html .. ")\r\n"
+          .. "T1 OK done\r\n" },
+    }, ck, function (c, got)
+      c.fetch("1,2,3,4", "UID BODYSTRUCTURE", function (ok, msgs)
+        err.assert(ok, "fetch failed")
+        got.msgs = msgs
+      end)
+    end)
+    err.assert(#got.msgs == 4)
+    local s1 = got.msgs[1].structure
+    err.assert(s1.type == "text" and s1.subtype == "plain")
+    err.assert(s1.encoding == "7bit" and s1.size == 100)
+    local p1 = bs.text_part(s1)
+    err.assert(p1.part == "1" and p1.charset == "US-ASCII")
+    local s2 = got.msgs[2].structure
+    err.assert(s2.type == "multipart" and s2.subtype == "alternative")
+    err.assert(#s2.parts == 2)
+    local p2 = bs.text_part(s2)
+    err.assert(p2.part == "1" and p2.encoding == "quoted-printable")
+    local p3 = bs.text_part(got.msgs[3].structure)
+    err.assert(p3.part == "1.1" and p3.subtype == "plain")
+    local p4 = bs.text_part(got.msgs[4].structure)
+    err.assert(p4.part == "1" and p4.subtype == "html")
+  end)
+
+  test("a numbered body section is body, not header: " .. name, function ()
+    local text = "just the plain part\r\n"
+    local got = session({
+      GREETING,
+      { expect = "T1 UID FETCH 5 (UID BODY.PEEK[1.1])\r\n",
+        reply = "* 1 FETCH (UID 5 BODY[1.1] {" .. #text .. "}\r\n"
+          .. text .. ")\r\n"
+          .. "T1 OK done\r\n" },
+    }, ck, function (c, got)
+      c.fetch("5", "UID BODY.PEEK[1.1]", function (ok, msgs)
+        err.assert(ok, "fetch failed")
+        got.msgs = msgs
+      end)
+    end)
+    err.assert(got.msgs[1].body == text)
+    err.assert(got.msgs[1].header == nil)
   end)
 
   test("append with continuation: " .. name, function ()
