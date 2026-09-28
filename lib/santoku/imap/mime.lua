@@ -60,6 +60,33 @@ local function decode_cte (data, cte)
   return data
 end
 
+local U = str.utf8_char
+
+local ENTITIES = {
+  nbsp = " ", amp = "&", lt = "<", gt = ">", quot = "\"", apos = "'",
+  shy = "", zwnj = "", zwj = "",
+  copy = U(169), reg = U(174), trade = U(8482), hellip = U(8230),
+  mdash = U(8212), ndash = U(8211), lsquo = U(8216), rsquo = U(8217),
+  ldquo = U(8220), rdquo = U(8221), bull = U(8226), middot = U(183),
+  deg = U(176), euro = U(8364), pound = U(163), yen = U(165), cent = U(162),
+  laquo = U(171), raquo = U(187), times = U(215), para = U(182), sect = U(167),
+}
+
+local function entity (hash, body)
+  if hash == "" then
+    return ENTITIES[body]
+  end
+  local hex = str.match(body, "^[xX](%x+)$")
+  local cp = hex and tonumber(hex, 16) or (str.match(body, "^%d+$") and tonumber(body))
+  if not cp or cp == 0 or cp > 0x10FFFF or (cp >= 0xD800 and cp <= 0xDFFF) then
+    return nil
+  end
+  if cp == 160 then
+    return " "
+  end
+  return U(cp)
+end
+
 local function strip_html (s)
   s = str.gsub(s, "<[sS][tT][yY][lL][eE][^>]*>.-</[sS][tT][yY][lL][eE]>", " ")
   s = str.gsub(s, "<[sS][cC][rR][iI][pP][tT][^>]*>.-</[sS][cC][rR][iI][pP][tT]>", " ")
@@ -67,19 +94,7 @@ local function strip_html (s)
   s = str.gsub(s, "</[pP]>", "\n\n")
   s = str.gsub(s, "</[dD][iI][vV]>", "\n")
   s = str.gsub(s, "<[^>]->", "")
-  s = str.gsub(s, "&nbsp;", " ")
-  s = str.gsub(s, "&amp;", "&")
-  s = str.gsub(s, "&lt;", "<")
-  s = str.gsub(s, "&gt;", ">")
-  s = str.gsub(s, "&quot;", "\"")
-  s = str.gsub(s, "&#(%d+);", function (n)
-    n = tonumber(n)
-    if n and n >= 32 and n < 127 then
-      return str.char(n)
-    end
-    return ""
-  end)
-  return s
+  return (str.gsub(s, "&(#?)(%w+);", entity))
 end
 
 local function boundary_of (ctype)

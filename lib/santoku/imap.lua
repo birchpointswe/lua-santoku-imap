@@ -1,7 +1,12 @@
 local str = require("santoku.string")
 local arr = require("santoku.array")
 local profile = require("santoku.profile")
+local tokens = require("santoku.imap.tokens")
 local bodystructure = require("santoku.imap.bodystructure")
+
+local is_open = tokens.is_open
+local is_close = tokens.is_close
+local read_tree = tokens.read_tree
 
 local function quote (s)
   local escaped = str.gsub(s, "\\", "\\\\")
@@ -9,111 +14,113 @@ local function quote (s)
   return "\"" .. escaped .. "\""
 end
 
-local function tokenize (pieces)
-  local toks = {}
-  for i = 1, #pieces do
-    local p = pieces[i]
-    if p.lit then
-      arr.push(toks, { s = p.s, q = true })
-    else
-      local s = p.s
-      local pos = 1
-      local n = #s
-      while pos <= n do
-        local c = str.sub(s, pos, pos)
-        if c == " " then
-          pos = pos + 1
-        elseif c == "(" or c == ")" or c == "[" or c == "]" then
-          arr.push(toks, { s = c })
-          pos = pos + 1
-        elseif c == "\"" then
-          local out = {}
-          pos = pos + 1
-          while pos <= n do
-            local ch = str.sub(s, pos, pos)
-            if ch == "\\" then
-              arr.push(out, str.sub(s, pos + 1, pos + 1))
-              pos = pos + 2
-            elseif ch == "\"" then
-              pos = pos + 1
-              break
-            else
-              arr.push(out, ch)
-              pos = pos + 1
-            end
-          end
-          arr.push(toks, { s = arr.concat(out), q = true })
-        else
-          local e = str.find(s, "[%s%(%)%[%]\"]", pos)
-          local stop = (e or (n + 1)) - 1
-          arr.push(toks, { s = str.sub(s, pos, stop) })
-          pos = stop + 1
-        end
+local tokenize = profile.wrapped("imap.tokenize", tokens.tokenize)
+
+local function read_section (toks, i)
+  local out = {}
+  local glue = ""
+  local depth = 1
+  i = i + 1
+  while toks[i] and depth > 0 do
+    local t = toks[i]
+    if not t.q and t.s == "[" then
+      depth = depth + 1
+    elseif not t.q and t.s == "]" then
+      depth = depth - 1
+    end
+    if depth > 0 then
+      if is_open(t) then
+        arr.push(out, glue, "(")
+        glue = ""
+      elseif is_close(t) then
+        arr.push(out, ")")
+        glue = " "
+      else
+        arr.push(out, glue, t.s)
+        glue = " "
       end
     end
+    i = i + 1
   end
-  return toks
+  return str.upper(arr.concat(out)), i
 end
 
-local function extract_fetch (pieces)
-  local toks = tokenize(pieces)
+local function part_value (toks, i)
+  local t = toks[i]
+  if t and not t.q and str.match(t.s, "^<%d+>$") then
+    i = i + 1
+    t = toks[i]
+  end
+  if not t then
+    return nil, i
+  end
+  if t.q or str.upper(t.s) ~= "NIL" then
+    return t.s, i + 1
+  end
+  return nil, i + 1
+end
+
+local function set_of (list, map)
   local out = {}
-  local i = 1
-  local n = #toks
-  while i <= n do
-    local t = toks[i]
-    if not t.q and t.s == "UID" then
-      out.uid = tonumber(toks[i + 1] and toks[i + 1].s)
-      i = i + 2
-    elseif not t.q and t.s == "X-GM-THRID" then
-      out.thrid = toks[i + 1] and toks[i + 1].s
-      i = i + 2
-    elseif not t.q and t.s == "X-GM-MSGID" then
-      out.msgid = toks[i + 1] and toks[i + 1].s
-      i = i + 2
-    elseif not t.q and t.s == "BODYSTRUCTURE" then
-      i = i + 1
-      if toks[i] and not toks[i].q and toks[i].s == "(" then
-        out.structure, i = bodystructure.parse(toks, i)
-      else
-        i = i + 1
+  if type(list) == "table" then
+    for j = 1, #list do
+      local v = list[j]
+      if type(v) == "string" then
+        out[map and map(v) or v] = true
       end
-    elseif not t.q and (t.s == "BODY" or t.s == "RFC822.HEADER") then
-      local is_header = t.s == "RFC822.HEADER"
-      i = i + 1
-      if toks[i] and not toks[i].q and toks[i].s == "[" then
-        local depth = 1
-        i = i + 1
-        while i <= n and depth > 0 do
-          if not toks[i].q and toks[i].s == "[" then depth = depth + 1 end
-          if not toks[i].q and toks[i].s == "]" then depth = depth - 1 end
-          if not toks[i].q and depth == 1
-            and str.match(toks[i].s, "^HEADER") then
-            is_header = true
-          end
-          i = i + 1
-        end
-      end
-      if toks[i] and not toks[i].q
-        and str.match(toks[i].s, "^<%d+>$") then
-        i = i + 1
-      end
-      if toks[i] and toks[i].q then
-        if is_header then
-          out.header = toks[i].s
-        else
-          out.body = toks[i].s
-        end
-      end
-      i = i + 1
-    else
-      i = i + 1
     end
   end
   return out
 end
 
-tokenize = profile.wrapped("imap.tokenize", tokenize)
+local function extract_fetch (pieces)
+  local toks = tokenize(pieces)
+  local items, parts = {}, {}
+  local out = { items = items, parts = parts }
+  local i = 1
+  while toks[i] and not is_open(toks[i]) do
+    i = i + 1
+  end
+  i = i + 1
+  while toks[i] and not is_close(toks[i]) do
+    local t = toks[i]
+    i = i + 1
+    if not t.q then
+      local key = str.upper(t.s)
+      if (key == "BODYSTRUCTURE" or key == "BODY") and is_open(toks[i]) then
+        out.structure, i = bodystructure.parse(toks, i)
+      elseif key == "BODY" and toks[i] and not toks[i].q and toks[i].s == "[" then
+        local section, val
+        section, i = read_section(toks, i)
+        val, i = part_value(toks, i)
+        parts[section] = val
+        if str.match(section, "^HEADER") then
+          out.header = val
+        else
+          out.body = val
+        end
+      else
+        local val
+        val, i = read_tree(toks, i)
+        items[key] = val
+        if key == "RFC822.HEADER" then
+          out.header = val
+        elseif key == "RFC822.TEXT" or key == "RFC822" then
+          out.body = val
+        end
+      end
+    end
+  end
+  out.uid = tonumber(items.UID)
+  out.thrid = items["X-GM-THRID"]
+  out.msgid = items["X-GM-MSGID"]
+  out.internaldate = items.INTERNALDATE
+  out.size = tonumber(items["RFC822.SIZE"])
+  out.flags = set_of(items.FLAGS, str.lower)
+  out.labels = set_of(items["X-GM-LABELS"])
+  return out
+end
+
 extract_fetch = profile.wrapped("imap.extract_fetch", extract_fetch)
 
 local function extract_list (pieces)

@@ -216,6 +216,69 @@ for name, chunker in pairs({ whole = false, bytewise = bytewise }) do
     err.assert(got.msgs[1].header == nil)
   end)
 
+  test("fetch flags labels date size and raw items: " .. name, function ()
+    local got = session({
+      GREETING,
+      { expect = "T1 UID FETCH 7 (UID FLAGS X-GM-LABELS X-GM-MSGID INTERNALDATE"
+          .. " RFC822.SIZE)\r\n",
+        reply = "* 1 FETCH (UID 7 FLAGS (\\Seen $Phishing) "
+          .. "X-GM-LABELS (\\Inbox \"\\\\Important\" \"My Label\" Work) "
+          .. "X-GM-MSGID 1234567890123456789 "
+          .. "INTERNALDATE \"27-Sep-2026 08:51:00 +0000\" RFC822.SIZE 4321)\r\n"
+          .. "T1 OK done\r\n" },
+    }, ck, function (c, got)
+      c.fetch("7", "UID FLAGS X-GM-LABELS X-GM-MSGID INTERNALDATE RFC822.SIZE",
+        function (ok, msgs)
+          err.assert(ok, "fetch failed")
+          got.msgs = msgs
+        end)
+    end)
+    local m = got.msgs[1]
+    err.assert(m.uid == 7)
+    err.assert(m.flags["\\seen"] and m.flags["$phishing"])
+    err.assert(not m.flags["\\Seen"])
+    err.assert(m.labels["\\Inbox"] and m.labels["\\Important"])
+    err.assert(m.labels["My Label"] and m.labels.Work)
+    err.assert(not m.labels["\\Sent"])
+    err.assert(m.msgid == "1234567890123456789")
+    err.assert(m.internaldate == "27-Sep-2026 08:51:00 +0000")
+    err.assert(m.size == 4321)
+    err.assert(m.items.UID == "7")
+    err.assert(#m.items.FLAGS == 2 and m.items.FLAGS[1] == "\\Seen")
+    err.assert(m.items["RFC822.SIZE"] == "4321")
+    err.assert(m.header == nil and m.body == nil)
+  end)
+
+  test("fetch parts keyed by section and nested items: " .. name, function ()
+    local hdr = "Subject: A\r\n\r\n"
+    local got = session({
+      GREETING,
+      { expect = "T1 UID FETCH 3 (UID ENVELOPE BODY.PEEK[HEADER.FIELDS (SUBJECT)]"
+          .. " BODY.PEEK[1])\r\n",
+        reply = "* 1 FETCH (UID 3 ENVELOPE (\"date\" \"subj\" "
+          .. "((\"Ann\" NIL \"a\" \"b.c\")) NIL) "
+          .. "BODY[HEADER.FIELDS (SUBJECT)] {" .. #hdr .. "}\r\n" .. hdr
+          .. " BODY[1] \"part one\")\r\n"
+          .. "T1 OK done\r\n" },
+    }, ck, function (c, got)
+      c.fetch("3", "UID ENVELOPE BODY.PEEK[HEADER.FIELDS (SUBJECT)] BODY.PEEK[1]",
+        function (ok, msgs)
+          err.assert(ok, "fetch failed")
+          got.msgs = msgs
+        end)
+    end)
+    local m = got.msgs[1]
+    err.assert(m.uid == 3)
+    err.assert(m.parts["HEADER.FIELDS (SUBJECT)"] == hdr)
+    err.assert(m.parts["1"] == "part one")
+    err.assert(m.header == hdr and m.body == "part one")
+    local env = m.items.ENVELOPE
+    err.assert(env[1] == "date" and env[2] == "subj")
+    err.assert(env[3][1][1] == "Ann" and env[3][1][4] == "b.c")
+    err.assert(env[4] == "NIL")
+    err.assert(next(m.flags) == nil and next(m.labels) == nil)
+  end)
+
   test("append with continuation: " .. name, function ()
     local msg = "Subject: draft\r\n\r\nbody\r\n"
     local got = session({

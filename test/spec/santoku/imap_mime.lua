@@ -103,6 +103,13 @@ test("html only gets stripped", function ()
   err.assert(not str.find(t, "<div>", 1, true))
 end)
 
+test("html entities decode to utf8", function ()
+  local raw = "<p>caf&#233; &amp; &#x1F600; &copy; &nbsp;x &bogus; &#0; &#xD800; &mdash;</p>"
+  local t = mime.extract_text("text/html", nil, raw)
+  err.assert(str.find(t, "caf\195\169 & \240\159\152\128 \194\169  x &bogus; &#0;"
+    .. " &#xD800; \226\128\148", 1, true), t)
+end)
+
 test("nested multipart finds plain", function ()
   local inner = "--in\r\nContent-Type: text/plain\r\n\r\n"
     .. "deep plain\r\n--in--\r\n"
