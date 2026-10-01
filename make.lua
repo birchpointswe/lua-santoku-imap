@@ -1,8 +1,11 @@
+-- SPDX-License-Identifier: MIT
+-- SPDX-FileCopyrightText: 2026 Birch Point SWE
 local env = {
 
   name = "santoku-imap",
-  version = "0.4.0-1",
+  version = "0.4.1-1",
   license = "MIT",
+  copyright = "Birch Point SWE",
   public = true,
 
   dependencies = {
